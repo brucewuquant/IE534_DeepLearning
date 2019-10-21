@@ -1,0 +1,149 @@
+#imdb_dictionary = np.load('../preprocessed_data/imdb_dictionary.npy')
+import numpy as np
+import torch
+import torch.nn as nn
+import os, sys, io
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.autograd import Variable
+
+from BOW_model import BOW_model
+
+LEARNING_RATE = 0.001
+NO_OF_EPOCHS = 6
+batch_size = 200
+VOCAB_SIZE = 8000
+NO_OF_HIDDEN_UNITS = 500
+
+x_train = []
+with io.open('../preprocessed_data/imdb_train.txt','r',encoding='utf-8') as f:
+	lines = f.readlines()
+  
+for line in lines:
+    line = line.strip()
+    line = line.split(' ')
+    line = np.asarray(line, dtype=np.int)
+    
+    line[line>VOCAB_SIZE] = 0
+    
+    x_train.append(line)
+   
+x_train = x_train[0:25000]
+y_train = np.zeros((25000, ))
+y_train[0:12500] = 1
+
+x_test = []
+with io.open('../preprocessed_data/imdb_test.txt','r',encoding='utf-8') as f:
+    lines = f.readlines()
+   
+for line in lines:
+    line = line.strip()
+    line = line.split(' ')
+    line = np.asarray(line, dtype=np.int)
+    
+    line[line>VOCAB_SIZE] = 0
+    
+    x_test.append(line)
+    
+y_test = np.zeros((25000, ))
+y_test[0:12500] = 1
+
+vocab_size_bow = VOCAB_SIZE+1
+
+model = BOW_model(vocab_size_bow, NO_OF_HIDDEN_UNITS)
+model.cuda()
+optimizer = optim.Adam(model.parameters(), lr = LEARNING_RATE)
+
+train_ind = list(range(len(y_train)))
+test_ind = list(range(len(y_test)))
+
+train_loss, train_acc, test_acc = [], [], []
+
+for epoch in range(NO_OF_EPOCHS):
+    model.train()
+    
+    epoch_cnt = 0
+    epoch_loss=  0.0
+    correct, total = 0.0, 0.0
+    
+    np.random.shuffle(train_ind) # could use np.random.permutation
+    
+    for i in range(0, len(y_train), batch_size):
+    
+        x = [x_train[j] for j in train_ind[i:i+batch_size]]
+        y = np.asarray([y_train[j] for j in train_ind[i:i+batch_size]], dtype=np.int)
+        labels = Variable(torch.FloatTensor(y)).cuda()
+        
+        optimizer.zero_grad()
+        loss, pred = model(x, labels)
+        loss.backward()
+        
+        optimizer.step() 
+        
+        predicted = pred >= 0.0
+        labels = labels >= 0.5
+        
+        correct += predicted.eq(labels).float().sum().item()
+        total += len(labels)
+        
+        epoch_loss += loss.data.item()
+        
+        epoch_cnt += 1
+
+    epoch_loss = epoch_loss / epoch_cnt
+    epoch_acc = correct / total
+    
+    train_loss.append(epoch_loss)
+    train_acc.append(epoch_acc)
+        
+    print('epoch:', epoch, 'training_acc:', train_acc, 'training_loss:', train_loss)
+    
+    model.eval()
+    
+    epoch_cnt = 0
+    epoch_loss = 0.0
+    correct, total = 0.0, 0.0
+    
+    np.random.shuffle(test_ind)
+    
+    for i in range(0, len(y_test), batch_size):
+        x = [x_test[j] for j in test_ind[i:i+batch_size]]
+        y = np.asarray([y_test[j] for j in test_ind[i:i+batch_size]],dtype=np.int)
+        labels = Variable(torch.FloatTensor(y)).cuda()
+        
+        with torch.no_grad():
+            loss, pred = model(x, labels)
+            
+        predicted = pred >= 0.0
+        labels = labels >= 0.5
+        
+        correct += predicted.eq(labels).float().sum().item()
+        total += len(labels)
+        
+        epoch_loss += loss.data.item()
+        epoch_cnt += 1
+    
+    epoch_loss = epoch_loss / epoch_cnt
+    epoch_acc = correct/total
+    
+    test_acc.append(epoch_acc)
+    
+    print('epoch:', epoch, 'testing_acc:', test_acc)
+
+import pandas as pd
+df = pd.DataFrame({'train_loss':train_loss, 'train_acc':train_acc, 'test_acc':test_acc})
+df.to_csv('result.csv')
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+            
+    
